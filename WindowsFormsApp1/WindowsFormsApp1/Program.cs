@@ -27,166 +27,130 @@ namespace WindowsFormsApp1
     }
 
 
-    public class Lake<T> where T : class
+    public class Lake<T> where T : class, Animal
     {
-        // Fields (private variables)
         private int slots;
         private int id;
         private List<T> AnimalList;
-        private List<T> FlamingoWait;
-        static Mutex mutexHippo;
-        static Mutex mutexFlamingoZebra;
+        private readonly object lockObj = new object();
         private SemaphoreSlim drinkingSemaphore;
-
+        private bool hippoInLake = false;
 
         public Lake(int id, int slots)
         {
             this.id = id;
             this.slots = slots;
-            this.AnimalList = new List<T>(slots);
-            this.FlamingoWait = new List<T>();
-            mutexHippo = new Mutex();
-            mutexFlamingoZebra = new Mutex();
-            this.drinkingSemaphore = new SemaphoreSlim(slots); // or a smaller number if only some can drink at a time
-
-
-
-
+            this.AnimalList = new List<T>(new T[slots]);
+            this.drinkingSemaphore = new SemaphoreSlim(slots);
         }
 
-        public int Id
+        public async Task<bool> InsertAnimalAsync(T animal)
         {
-            get { return id; }
-            set { id = value; }
-        }
-        public int Slots
-        {
-            get { return slots; }
-            set { slots = value; }
-        }
+            string type = animal.getType();
 
-        public async Task StartDrinking()
-        {
-            List<Task> drinkingTasks = new List<Task>();
-
-            for (int i = 0; i < AnimalList.Count; i++)
+            lock (lockObj)
             {
-                var animal = AnimalList[i];
-                if (animal != null)
+                while (hippoInLake)
                 {
-                    drinkingTasks.Add(DrinkAsync(animal, i));
+                    Monitor.Wait(lockObj); 
                 }
-            }
 
-            await Task.WhenAll(drinkingTasks); // Wait for all to finish
+                if (type == "h")
+                {
+                    // Prevent other hippos from barging in
+                    hippoInLake = true;
+
+                    // Evict all other animals
+                    for (int i = 0; i < slots; i++)
+                        AnimalList[i] = null;
+
+                    AnimalList[0] = animal;
+                    _ = DrinkAsync(animal, 0, isHippo: true);
+                    return true;
+                }
+
+                if (type == "z")
+                {
+                    for (int i = 0; i < slots - 1; i++)
+                    {
+                        if (AnimalList[i] == null && AnimalList[i + 1] == null)
+                        {
+                            AnimalList[i] = animal;
+                            AnimalList[i + 1] = animal;
+                            _ = DrinkAsync(animal, i);
+                            _ = DrinkAsync(animal, i + 1);
+                            return true;
+                        }
+                    }
+                    return false;
+                }
+
+                if (type == "f")
+                {
+                    // Prefer slot next to another flamingo
+                    for (int i = 0; i < slots; i++)
+                    {
+                        if (AnimalList[i] == null)
+                        {
+                            bool hasNeighborFlamingo =
+                                (i > 0 && AnimalList[i - 1]?.getType() == "f") ||
+                                (i < slots - 1 && AnimalList[i + 1]?.getType() == "f");
+
+                            if (hasNeighborFlamingo)
+                            {
+                                AnimalList[i] = animal;
+                                _ = DrinkAsync(animal, i);
+                                return true;
+                            }
+                        }
+                    }
+
+                    // No adjacent found, place the first flamingo
+                    for (int i = 0; i < slots; i++)
+                    {
+                        if (AnimalList[i] == null)
+                        {
+                            AnimalList[i] = animal;
+                            _ = DrinkAsync(animal, i);
+                            return true;
+                        }
+                    }
+
+                    return false;
+                }
+
+                return false;
+            }
         }
-        private async Task DrinkAsync(T animal, int index)
+
+        private async Task DrinkAsync(T animal, int index, bool isHippo = false)
         {
             await drinkingSemaphore.WaitAsync();
 
             try
             {
-                Console.WriteLine($"Animal at slot {index} is drinking...");
-                int drinkTime = ((Animal)(object)animal).drinkTime;
-                await Task.Delay(drinkTime); // simulate drinking
-                Console.WriteLine($"Animal at slot {index} finished drinking.");
+                Console.WriteLine($"[{animal.getType()}] Animal at slot {index} is drinking...");
+                await Task.Delay(animal.drinkTime);
+                Console.WriteLine($"[{animal.getType()}] Animal at slot {index} finished drinking.");
             }
             finally
             {
+                lock (lockObj)
+                {
+                    if (AnimalList[index]?.getId() == animal.getId())
+                        AnimalList[index] = null;
+
+                    if (isHippo)
+                    {
+                        hippoInLake = false;
+                        Monitor.PulseAll(lockObj); // wake everyone up
+                    }
+                }
                 drinkingSemaphore.Release();
             }
         }
-
-
-
-
-        private void EnsureListSize()
-        {
-            while (AnimalList.Count < slots)
-                AnimalList.Add(null);
-        }
-        public async Task<bool> insertAnimal(Animal animal)
-        {
-            string type = animal.getType();
-
-            if (type.Equals("h"))
-            {
-                mutexHippo.WaitOne();  // Enter critical section
-                this.AnimalList.Clear();
-                EnsureListSize();
-                this.AnimalList[0] = animal;
-
-                _ = DrinkAsync((T)(object)animal, 0); // fire-and-forget, safe in async context
-
-                mutexHippo.ReleaseMutex();
-                return true;
-            }
-            else
-            {
-                mutexFlamingoZebra.WaitOne();
-                switch (type)
-                {
-                    case "z":
-                        int? startIndex = null;
-                        EnsureListSize();
-
-                        for (int i = 0; i < this.AnimalList.Count - 1; i++)
-                        {
-                            if (this.AnimalList[i] == null && this.AnimalList[i + 1] == null)
-                            {
-                                startIndex = i;
-                                break;
-                            }
-                        }
-
-                        if (startIndex.HasValue)
-                        {
-                            int first = startIndex.Value;
-                            int second = (first == slots - 1) ? 0 : first + 1;
-
-                            this.AnimalList[first] = animal;
-                            this.AnimalList[second] = animal;
-
-                            _ = DrinkAsync((T)(object)animal, first);
-                            _ = DrinkAsync((T)(object)animal, second);
-
-                            mutexFlamingoZebra.ReleaseMutex();
-                            return true;
-                        }
-                        break;
-
-                    case "f":
-                        startIndex = null;
-                        EnsureListSize();
-
-                        for (int i = 0; i < this.AnimalList.Count; i++)
-                        {
-                            var current = this.AnimalList[i];
-                            if (current == null) continue;
-
-
-
-
-                            if (current.GetType().Name.ToLower().StartsWith("f"))
-                            {
-                                if ((i > 0 && this.AnimalList[i - 1] == null) ||
-                                    (i < this.AnimalList.Count - 1 && this.AnimalList[i + 1] == null))
-                                {
-                                    startIndex = i;
-                                    break;
-                                }
-                            }
-                        }
-
-                        // You may want to do something with `startIndex` here.
-                        break;
-                }
-
-                mutexFlamingoZebra.ReleaseMutex();
-            }
-
-            return false;
-        }
-
     }
+
+
+
 }
