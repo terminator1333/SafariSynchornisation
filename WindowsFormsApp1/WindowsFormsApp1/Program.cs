@@ -36,36 +36,48 @@ namespace WindowsFormsApp1
         private SemaphoreSlim drinkingSemaphore;
         private bool hippoInLake = false;
 
+        // Track cancellation tokens for drinking animals
+        private Dictionary<int, CancellationTokenSource> cancellationTokens;
+
         public Lake(int id, int slots)
         {
             this.id = id;
             this.slots = slots;
             this.AnimalList = new List<T>(new T[slots]);
             this.drinkingSemaphore = new SemaphoreSlim(slots);
+            this.cancellationTokens = new Dictionary<int, CancellationTokenSource>();
         }
 
-        public async Task<bool> InsertAnimalAsync(T animal)
+        public async Task<bool> InsertAnimal(T animal)
         {
             string type = animal.getType();
 
             lock (lockObj)
             {
                 while (hippoInLake)
-                {
-                    Monitor.Wait(lockObj); 
-                }
+                    Monitor.Wait(lockObj);
 
                 if (type == "h")
                 {
-                    // Prevent other hippos from barging in
+                    // Mark hippo in lake
                     hippoInLake = true;
 
-                    // Evict all other animals
+                    // Cancel all active drinking tasks
+                    foreach (var kvp in cancellationTokens)
+                        kvp.Value.Cancel();
+
+                    cancellationTokens.Clear();
+
+                    // Evict all animals
                     for (int i = 0; i < slots; i++)
                         AnimalList[i] = null;
 
                     AnimalList[0] = animal;
-                    _ = DrinkAsync(animal, 0, isHippo: true);
+
+                    var cts = new CancellationTokenSource();
+                    cancellationTokens[0] = cts;
+                    _ = DrinkAsync(animal, 0, true, cts.Token);
+
                     return true;
                 }
 
@@ -77,8 +89,14 @@ namespace WindowsFormsApp1
                         {
                             AnimalList[i] = animal;
                             AnimalList[i + 1] = animal;
-                            _ = DrinkAsync(animal, i);
-                            _ = DrinkAsync(animal, i + 1);
+
+                            var cts1 = new CancellationTokenSource();
+                            var cts2 = new CancellationTokenSource();
+                            cancellationTokens[i] = cts1;
+                            cancellationTokens[i + 1] = cts2;
+
+                            _ = DrinkAsync(animal, i, false, cts1.Token);
+                            _ = DrinkAsync(animal, i + 1, false, cts2.Token);
                             return true;
                         }
                     }
@@ -87,7 +105,6 @@ namespace WindowsFormsApp1
 
                 if (type == "f")
                 {
-                    // Prefer slot next to another flamingo
                     for (int i = 0; i < slots; i++)
                     {
                         if (AnimalList[i] == null)
@@ -99,19 +116,22 @@ namespace WindowsFormsApp1
                             if (hasNeighborFlamingo)
                             {
                                 AnimalList[i] = animal;
-                                _ = DrinkAsync(animal, i);
+                                var cts = new CancellationTokenSource();
+                                cancellationTokens[i] = cts;
+                                _ = DrinkAsync(animal, i, false, cts.Token);
                                 return true;
                             }
                         }
                     }
 
-                    // No adjacent found, place the first flamingo
                     for (int i = 0; i < slots; i++)
                     {
                         if (AnimalList[i] == null)
                         {
                             AnimalList[i] = animal;
-                            _ = DrinkAsync(animal, i);
+                            var cts = new CancellationTokenSource();
+                            cancellationTokens[i] = cts;
+                            _ = DrinkAsync(animal, i, false, cts.Token);
                             return true;
                         }
                     }
@@ -123,15 +143,18 @@ namespace WindowsFormsApp1
             }
         }
 
-        private async Task DrinkAsync(T animal, int index, bool isHippo = false)
+        private async Task DrinkAsync(T animal, int index, bool isHippo, CancellationToken token)
         {
-            await drinkingSemaphore.WaitAsync();
-
+            await drinkingSemaphore.WaitAsync(token);
             try
             {
                 Console.WriteLine($"[{animal.getType()}] Animal at slot {index} is drinking...");
-                await Task.Delay(animal.drinkTime);
+                await Task.Delay(animal.drinkTime, token);
                 Console.WriteLine($"[{animal.getType()}] Animal at slot {index} finished drinking.");
+            }
+            catch (OperationCanceledException)
+            {
+                Console.WriteLine($"[{animal.getType()}] Animal at slot {index} was interrupted by a hippo.");
             }
             finally
             {
@@ -140,16 +163,20 @@ namespace WindowsFormsApp1
                     if (AnimalList[index]?.getId() == animal.getId())
                         AnimalList[index] = null;
 
+                    cancellationTokens.Remove(index);
+
                     if (isHippo)
                     {
                         hippoInLake = false;
-                        Monitor.PulseAll(lockObj); // wake everyone up
+                        Monitor.PulseAll(lockObj); // Wake up all waiting animals
                     }
                 }
+
                 drinkingSemaphore.Release();
             }
         }
     }
+
 
 
 
