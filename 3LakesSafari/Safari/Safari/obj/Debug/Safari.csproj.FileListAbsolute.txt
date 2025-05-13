@@ -1,0 +1,16 @@
+C:\Users\einavra\source\repos\Safari\Safari\obj\Debug\Safari.csproj.AssemblyReference.cache
+C:\Users\einavra\source\repos\Safari\Safari\obj\Debug\Safari.Form1.resources
+C:\Users\einavra\source\repos\Safari\Safari\obj\Debug\Safari.Properties.Resources.resources
+C:\Users\einavra\source\repos\Safari\Safari\obj\Debug\Safari.csproj.GenerateResource.cache
+C:\Users\einavra\source\repos\Safari\Safari\obj\Debug\Safari.csproj.CoreCompileInputs.cache
+C:\Users\einavra\source\repos\Safari\Safari\bin\Debug\background.png
+C:\Users\einavra\source\repos\Safari\Safari\bin\Debug\Safari.exe.config
+C:\Users\einavra\source\repos\Safari\Safari\bin\Debug\Safari.exe
+C:\Users\einavra\source\repos\Safari\Safari\bin\Debug\Safari.pdb
+C:\Users\einavra\source\repos\Safari\Safari\obj\Debug\Safari.exe
+C:\Users\einavra\source\repos\Safari\Safari\obj\Debug\Safari.pdb
+C:\Users\einavra\source\repos\Safari\Safari\bin\Debug\lake.png
+C:\Users\einavra\source\repos\Safari\Safari\bin\Debug\flamingo.png
+C:\Users\einavra\source\repos\Safari\Safari\bin\Debug\hippo.png
+C:\Users\einavra\source\repos\Safari\Safari\bin\Debug\zebra.png
+C:\Users\einavra\source\repos\Safari\Safari\bin\Debug\nature.png
